@@ -1,5 +1,6 @@
 import numpy as np
 from PIL import Image
+from .create_palette_image import create_palette_image
 
 def save_results(reduced_image: np.ndarray, output_prefix: str = "output", 
                 seed_colors=None, color_palette_rgb=None):
@@ -39,22 +40,26 @@ def save_results(reduced_image: np.ndarray, output_prefix: str = "output",
             # If seeds were provided, show closest matches
             if seed_colors and len(seed_colors) > 0:
                 f.write("\n" + "=" * 60 + "\n")
-                f.write("Seed Color Matches (closest palette color to each seed)\n")
+                f.write("Seed Color Matches (first colors are frozen seeds)\n")
                 f.write("=" * 60 + "\n\n")
                 
-                for i, (sr, sg, sb) in enumerate(seed_colors):
-                    # Find closest palette color (Euclidean distance in RGB)
-                    seed_rgb = np.array([sr, sg, sb])
-                    distances = np.sqrt(np.sum((color_palette_rgb - seed_rgb) ** 2, axis=1))
-                    closest_idx = np.argmin(distances)
-                    closest_dist = distances[closest_idx]
-                    
-                    pr = int(np.clip(color_palette_rgb[closest_idx][0], 0, 255))
-                    pg = int(np.clip(color_palette_rgb[closest_idx][1], 0, 255))
-                    pb = int(np.clip(color_palette_rgb[closest_idx][2], 0, 255))
+                n_seeds = len(seed_colors)
+                for i in range(n_seeds):
+                    sr, sg, sb = seed_colors[i]
+                    pr = int(np.clip(color_palette_rgb[i][0], 0, 255))
+                    pg = int(np.clip(color_palette_rgb[i][1], 0, 255))
+                    pb = int(np.clip(color_palette_rgb[i][2], 0, 255))
                     
                     f.write(f"Seed {i}: RGB({sr:3d}, {sg:3d}, {sb:3d}) = #{sr:02x}{sg:02x}{sb:02x}\n")
-                    f.write(f"  → Closest: Color {closest_idx:2d} RGB({pr:3d}, {pg:3d}, {pb:3d}) = #{pr:02x}{pg:02x}{pb:02x}\n")
-                    f.write(f"     Distance: {closest_dist:.2f}\n\n")
+                    f.write(f"  → Color {i:2d} [FROZEN]: RGB({pr:3d}, {pg:3d}, {pb:3d}) = #{pr:02x}{pg:02x}{pb:02x}\n\n")
         
         print(f"Saved palette info to: {output_palette}")
+        
+        # Create palette swatch image
+        output_swatches = f"{output_prefix}_swatches.png"
+        create_palette_image(
+            color_palette_rgb=color_palette_rgb,
+            output_path=output_swatches,
+            width=1400,  # A4 landscape at ~300 DPI ≈ 1400 pixels
+            show_hex=True
+        )
