@@ -1,5 +1,5 @@
 """
-Pallet Finder - Image Analysis Tool
+palette Finder - Image Analysis Tool
 
 This module provides functionality to:
 1. Parse and load images
@@ -8,6 +8,7 @@ This module provides functionality to:
 """
 
 import numpy as np
+import sys
 from PIL import Image
 from sklearn.cluster import KMeans
 from scipy.ndimage import label
@@ -15,14 +16,14 @@ import matplotlib.pyplot as plt
 from typing import Tuple, Optional
 
 
-class PalletFinder:
+class PaletteFinder:
     """
     A class for analyzing images to find color palettes and segment regions.
     """
     
     def __init__(self, image_path: str):
         """
-        Initialize the PalletFinder with an image.
+        Initialize the PaletteFinder with an image.
         
         Args:
             image_path: Path to the image file
@@ -79,18 +80,15 @@ class PalletFinder:
         
         return self.reduced_image, self.color_palette
     
-    def segment_regions(self, color_tolerance: int = 10) -> np.ndarray:
+    def segment_regions(self) -> np.ndarray:
         """
         Segment the image into regions of similar adjacent colors.
         
         This uses connected component labeling to identify regions where
         adjacent pixels have similar colors.
         
-        Args:
-            color_tolerance: Maximum color difference to consider pixels similar
-            
         Returns:
-            Array of labeled regions
+            Array of labeled regions with consecutive integer labels
         """
         if self.reduced_image is None:
             raise ValueError("Must call reduce_colors() before segment_regions()")
@@ -118,7 +116,16 @@ class PalletFinder:
             labels[mask] = color_labels[mask] + current_label
             current_label += n_features
         
-        self.segmented_image = labels
+        # Renumber labels to be consecutive starting from 0
+        unique_labels = np.unique(labels)
+        label_map = {old_label: new_label for new_label, old_label in enumerate(unique_labels)}
+        
+        # Apply the mapping to create consecutive labels
+        consecutive_labels = np.zeros_like(labels)
+        for old_label, new_label in label_map.items():
+            consecutive_labels[labels == old_label] = new_label
+        
+        self.segmented_image = consecutive_labels
         return self.segmented_image
     
     def visualize(self, show_original: bool = True, show_reduced: bool = True, 
@@ -175,26 +182,47 @@ class PalletFinder:
         plt.tight_layout()
         return fig
     
-    def save_results(self, output_prefix: str = "output"):
+    def save_results(self, output_prefix: str = "output", save_visualization: bool = True):
         """
         Save the processed images to files.
         
         Args:
             output_prefix: Prefix for output filenames
+            save_visualization: Whether to save the color-segmented visualization
         """
         if self.reduced_image is not None:
             reduced_img = Image.fromarray(self.reduced_image.astype(np.uint8))
             reduced_img.save(f"{output_prefix}_reduced.png")
+            print(f"Saved: {output_prefix}_reduced.png")
         
         if self.segmented_image is not None:
-            # Normalize segmented image for saving
+            # Save normalized segmented image (grayscale labels)
             seg_normalized = (self.segmented_image - self.segmented_image.min())
-            seg_normalized = (seg_normalized / seg_normalized.max() * 255).astype(np.uint8)
+            max_val = seg_normalized.max()
+            # prevent division by zero
+            if max_val > 0:
+                seg_normalized = (seg_normalized / max_val * 255).astype(np.uint8)
             seg_img = Image.fromarray(seg_normalized)
             seg_img.save(f"{output_prefix}_segmented.png")
+            print(f"Saved: {output_prefix}_segmented.png")
+            
+            # Save color-segmented visualization
+            if save_visualization:
+                # Create colorized version using matplotlib colormap
+                import matplotlib.cm as cm
+                cmap = cm.get_cmap('nipy_spectral')
+                # Normalize to [0, 1] range
+                seg_norm = seg_normalized / 255.0
+                # Apply colormap
+                colored_seg = cmap(seg_norm)
+                # Convert to RGB (remove alpha channel)
+                colored_seg_rgb = (colored_seg[:, :, :3] * 255).astype(np.uint8)
+                colored_img = Image.fromarray(colored_seg_rgb)
+                colored_img.save(f"{output_prefix}_segmented_colored.png")
+                print(f"Saved: {output_prefix}_segmented_colored.png")
 
 
-def analyze_image(image_path: str, n_colors: int = 8, visualize: bool = True) -> PalletFinder:
+def analyze_image(image_path: str, n_colors: int = 8, visualize: bool = True) -> PaletteFinder:
     """
     Convenience function to analyze an image with default settings.
     
@@ -204,9 +232,9 @@ def analyze_image(image_path: str, n_colors: int = 8, visualize: bool = True) ->
         visualize: Whether to display visualization
         
     Returns:
-        PalletFinder object with analysis results
+        PaletteFinder object with analysis results
     """
-    finder = PalletFinder(image_path)
+    finder = PaletteFinder(image_path)
     finder.load_image()
     finder.reduce_colors(n_colors=n_colors)
     finder.segment_regions()
@@ -219,11 +247,11 @@ def analyze_image(image_path: str, n_colors: int = 8, visualize: bool = True) ->
 
 
 if __name__ == "__main__":
-    import sys
+    
     
     if len(sys.argv) < 2:
-        print("Usage: python pallet_finder.py <image_path> [n_colors]")
-        print("Example: python pallet_finder.py image.jpg 8")
+        print("Usage: python palette_finder.py <image_path> [n_colors]")
+        print("Example: python palette_finder.py image.jpg 8")
         sys.exit(1)
     
     image_path = sys.argv[1]

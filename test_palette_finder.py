@@ -1,5 +1,5 @@
 """
-Unit tests for the pallet_finder module.
+Unit tests for the palette_finder module.
 """
 
 import unittest
@@ -7,11 +7,11 @@ import numpy as np
 from PIL import Image
 import os
 import tempfile
-from pallet_finder import PalletFinder, analyze_image
+from palette_finder import PaletteFinder, analyze_image
 
 
-class TestPalletFinder(unittest.TestCase):
-    """Test cases for PalletFinder class."""
+class TestPaletteFinder(unittest.TestCase):
+    """Test cases for PaletteFinder class."""
     
     def setUp(self):
         """Create a temporary test image."""
@@ -34,7 +34,7 @@ class TestPalletFinder(unittest.TestCase):
     
     def test_load_image(self):
         """Test image loading functionality."""
-        finder = PalletFinder(self.temp_file.name)
+        finder = PaletteFinder(self.temp_file.name)
         image_array = finder.load_image()
         
         self.assertIsNotNone(image_array)
@@ -43,7 +43,7 @@ class TestPalletFinder(unittest.TestCase):
     
     def test_reduce_colors(self):
         """Test color reduction using k-means."""
-        finder = PalletFinder(self.temp_file.name)
+        finder = PaletteFinder(self.temp_file.name)
         finder.load_image()
         
         n_colors = 4
@@ -61,7 +61,7 @@ class TestPalletFinder(unittest.TestCase):
     
     def test_segment_regions(self):
         """Test region segmentation."""
-        finder = PalletFinder(self.temp_file.name)
+        finder = PaletteFinder(self.temp_file.name)
         finder.load_image()
         finder.reduce_colors(n_colors=4)
         
@@ -77,7 +77,7 @@ class TestPalletFinder(unittest.TestCase):
     
     def test_segment_regions_requires_reduction(self):
         """Test that segment_regions requires reduce_colors to be called first."""
-        finder = PalletFinder(self.temp_file.name)
+        finder = PaletteFinder(self.temp_file.name)
         finder.load_image()
         
         with self.assertRaises(ValueError):
@@ -94,7 +94,7 @@ class TestPalletFinder(unittest.TestCase):
     
     def test_save_results(self):
         """Test saving results to files."""
-        finder = PalletFinder(self.temp_file.name)
+        finder = PaletteFinder(self.temp_file.name)
         finder.load_image()
         finder.reduce_colors(n_colors=4)
         finder.segment_regions()
@@ -121,7 +121,7 @@ class TestImageFormats(unittest.TestCase):
             Image.fromarray(gray_image, mode='L').save(f.name)
             
             try:
-                finder = PalletFinder(f.name)
+                finder = PaletteFinder(f.name)
                 image_array = finder.load_image()
                 
                 # Should be converted to RGB

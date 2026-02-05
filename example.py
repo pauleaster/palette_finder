@@ -1,12 +1,12 @@
 """
-Example script demonstrating the pallet_finder functionality.
+Example script demonstrating the palette_finder functionality.
 This creates a sample image and analyzes it.
 """
 
 import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
-from pallet_finder import PalletFinder, analyze_image
+from palette_finder import PaletteFinder, analyze_image
 
 
 def create_sample_image(filename: str = "sample_image.png", size: int = 200):
@@ -44,7 +44,7 @@ def create_sample_image(filename: str = "sample_image.png", size: int = 200):
 
 def main():
     """Run the example analysis."""
-    print("Pallet Finder - Example Usage")
+    print("palette Finder - Example Usage")
     print("=" * 50)
     
     # Create a sample image
@@ -52,7 +52,7 @@ def main():
     
     # Analyze the image
     print("\nAnalyzing sample image...")
-    finder = PalletFinder(sample_image)
+    finder = PaletteFinder(sample_image)
     
     # Step 1: Load the image
     print("1. Loading image...")

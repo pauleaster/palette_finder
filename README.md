@@ -1,4 +1,4 @@
-# Pallet Finder
+# palette Finder
 
 An image analysis Python application that uses matplotlib and scikit-learn to parse images, separate them into similar color regions, and reduce the number of colors using k-means clustering.
 
@@ -14,8 +14,8 @@ An image analysis Python application that uses matplotlib and scikit-learn to pa
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/pauleaster/pallet_finder.git
-cd pallet_finder
+git clone https://github.com/pauleaster/palette_finder.git
+cd palette_finder
 ```
 
 2. Install dependencies:
@@ -30,23 +30,23 @@ pip install -r requirements.txt
 Analyze an image directly from the command line:
 
 ```bash
-python pallet_finder.py <image_path> [n_colors]
+python palette_finder.py <image_path> [n_colors]
 ```
 
 Example:
 ```bash
-python pallet_finder.py my_image.jpg 8
+python palette_finder.py my_image.jpg 8
 ```
 
 ### Python API
 
-Use the `PalletFinder` class in your Python code:
+Use the `PaletteFinder` class in your Python code:
 
 ```python
-from pallet_finder import PalletFinder
+from palette_finder import PaletteFinder
 
-# Create a PalletFinder instance
-finder = PalletFinder('path/to/image.jpg')
+# Create a PaletteFinder instance
+finder = PaletteFinder('path/to/image.jpg')
 
 # Load the image
 finder.load_image()
@@ -69,7 +69,7 @@ finder.save_results(output_prefix='output')
 For quick analysis:
 
 ```python
-from pallet_finder import analyze_image
+from palette_finder import analyze_image
 
 # Analyze and visualize in one call
 finder = analyze_image('image.jpg', n_colors=8, visualize=True)
@@ -124,12 +124,12 @@ The application loads images using PIL (Pillow) and converts them to numpy array
 Run the test suite:
 
 ```bash
-python -m unittest test_pallet_finder.py -v
+python -m unittest test_palette_finder.py -v
 ```
 
 ## API Reference
 
-### `PalletFinder` Class
+### `PaletteFinder` Class
 
 #### `__init__(image_path: str)`
 Initialize with path to an image file.
@@ -149,7 +149,7 @@ Display visualization of results.
 #### `save_results(output_prefix: str = "output")`
 Save processed images to files.
 
-### `analyze_image(image_path: str, n_colors: int = 8, visualize: bool = True) -> PalletFinder`
+### `analyze_image(image_path: str, n_colors: int = 8, visualize: bool = True) -> PaletteFinder`
 Convenience function for quick image analysis.
 
 ## License
