@@ -213,3 +213,5 @@ __marimo__/
 *.gif
 !docs/*.png
 !docs/*.jpg
+
+*_palette.txt

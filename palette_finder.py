@@ -3,24 +3,23 @@ palette Finder - Image Analysis Tool
 
 This module provides functionality to:
 1. Parse and load images
-2. Separate images into similar color adjacent areas (segmentation)
-3. Reduce the number of colors using k-means clustering
+2. Reduce the number of colors using k-means clustering in OKLAB color space
 """
 
 import numpy as np
 import sys
-from PIL import Image
-from sklearn.cluster import KMeans
-from scipy.ndimage import label
-import matplotlib.pyplot as plt
-from typing import Tuple, Optional
-import time
+from typing import Tuple, Optional, List
 import signal
+
+# Import utility functions
+from utils.load_image import load_image as _load_image
+from utils.reduce_colors import reduce_colors as _reduce_colors
+from utils.save_results import save_results as _save_results
 
 
 class PaletteFinder:
     """
-    A class for analyzing images to find color palettes and segment regions.
+    A class for analyzing images to find color palettes.
     """
     
     def __init__(self, image_path: str):
@@ -34,9 +33,8 @@ class PaletteFinder:
         self.image = None
         self.image_array = None
         self.reduced_image = None
-        self.segmented_image = None
         self.color_palette = None
-        
+    
     def load_image(self) -> np.ndarray:
         """
         Load and parse the image file.
@@ -44,337 +42,127 @@ class PaletteFinder:
         Returns:
             numpy array representation of the image
         """
-        print(f"Loading image: {self.image_path}")
-        start_time = time.time()
-        
-        self.image = Image.open(self.image_path)
-        # Convert to RGB if necessary
-        if self.image.mode != 'RGB':
-            print(f"Converting from {self.image.mode} to RGB...")
-            self.image = self.image.convert('RGB')
-        self.image_array = np.array(self.image)
-        
-        elapsed = time.time() - start_time
-        print(f"Image loaded in {elapsed:.2f} seconds")
-        print(f"Image size: {self.image_array.shape[1]} × {self.image_array.shape[0]} pixels")
-        
+        self.image, self.image_array = _load_image(self.image_path)
         return self.image_array
     
-    def reduce_colors(self, n_colors: int = 8, random_state: int = 42) -> Tuple[np.ndarray, np.ndarray]:
+    def reduce_colors(self, n_colors: int = 8, random_state: int = 42,
+                     weight_L: float = 1.0, weight_a: float = 1.0, weight_b: float = 1.0,
+                     seed_colors: Optional[List[Tuple[int, int, int]]] = None) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Reduce the number of colors in the image using k-means clustering.
+        Reduce the number of colors in the image using k-means clustering in OKLAB space.
         
         Args:
             n_colors: Number of colors to reduce to
             random_state: Random state for reproducibility
+            weight_L: Weight for L (lightness) channel
+            weight_a: Weight for a (green-red) channel
+            weight_b: Weight for b (blue-yellow) channel
+            seed_colors: Optional list of RGB tuples to use as initial centers
             
         Returns:
             Tuple of (reduced image array, color palette)
-            
-        Raises:
-            KeyboardInterrupt: If user presses Ctrl+C during processing
         """
         if self.image_array is None:
             self.load_image()
         
-        print("\n" + "=" * 60)
-        print("STARTING COLOR REDUCTION")
-        print("=" * 60)
-        
-        # Reshape image to be a list of pixels
-        h, w, c = self.image_array.shape
-        
-        print(f"Reshaping image array...")
-        reshape_start = time.time()
-        pixels = self.image_array.reshape(-1, 3)
-        reshape_time = time.time() - reshape_start
-        print(f"Reshaped to {len(pixels):,} pixels in {reshape_time:.2f} seconds")
-        
-        n_init = 10  # Number of times k-means will run with different initializations
-        
-        print(f"\nProcessing {len(pixels):,} pixels with {n_colors} colors...")
-        print(f"Image dimensions: {w} × {h}")
-        print(f"Running K-means clustering with {n_init} different initializations...")
-        print(f"Expected output: {n_init} convergence messages (one per initialization)")
-        print("(This may take a while for large images - watch for iteration progress below)")
-        print("=" * 60)
-        
-        kmeans_start = time.time()
-        
-        try:
-            # Apply k-means clustering
-            kmeans = KMeans(n_clusters=n_colors, random_state=random_state, n_init=n_init, verbose=1)
-            labels = kmeans.fit_predict(pixels)
-        except KeyboardInterrupt:
-            print("\n" + "=" * 60)
-            print("K-means clustering interrupted by user")
-            raise  # Re-raise to propagate up
-        
-        kmeans_time = time.time() - kmeans_start
-        print("=" * 60)
-        print(f"K-means completed in {kmeans_time:.2f} seconds ({kmeans_time/60:.1f} minutes)")
-        
-        # Get the color palette (cluster centers)
-        print("\nExtracting color palette...")
-        palette_start = time.time()
-        self.color_palette = kmeans.cluster_centers_.astype(int)
-        palette_time = time.time() - palette_start
-        print(f"Color palette extracted in {palette_time:.4f} seconds")
-        
-        # Replace each pixel with its cluster center
-        print("Applying palette to image pixels...")
-        apply_start = time.time()
-        reduced_pixels = self.color_palette[labels]
-        self.reduced_image = reduced_pixels.reshape(h, w, c)
-        apply_time = time.time() - apply_start
-        print(f"Palette applied in {apply_time:.2f} seconds")
-        
-        total_time = time.time() - reshape_start
-        print("\n" + "=" * 60)
-        print(f"COLOR REDUCTION COMPLETE - Total: {total_time:.2f} seconds")
-        print("=" * 60)
-        
+        self.reduced_image, self.color_palette = _reduce_colors(
+            self.image_array, 
+            n_colors=n_colors, 
+            random_state=random_state,
+            weight_L=weight_L,
+            weight_a=weight_a,
+            weight_b=weight_b,
+            seed_colors=seed_colors
+        )
         return self.reduced_image, self.color_palette
     
-    def segment_regions(self) -> np.ndarray:
-        """
-        Segment the image into regions of similar adjacent colors.
-        
-        This uses connected component labeling to identify regions where
-        adjacent pixels have similar colors.
-        
-        Returns:
-            Array of labeled regions
-        """
-        if self.reduced_image is None:
-            raise ValueError("Must call reduce_colors() before segment_regions()")
-        
-        print("\n" + "=" * 60)
-        print("STARTING REGION SEGMENTATION")
-        print("=" * 60)
-        
-        total_start = time.time()
-        
-        h, w, c = self.reduced_image.shape
-        
-        print("Initializing label array...")
-        init_start = time.time()
-        labels = np.zeros((h, w), dtype=int)
-        current_label = 0
-        init_time = time.time() - init_start
-        print(f"Initialized in {init_time:.4f} seconds")
-        
-        # Create a structure for 4-connectivity (up, down, left, right)
-        structure = np.array([[0, 1, 0],
-                             [1, 1, 1],
-                             [0, 1, 0]])
-        
-        # For each unique color in the reduced image, find connected components
-        print("\nFinding unique colors...")
-        unique_start = time.time()
-        unique_colors = np.unique(self.reduced_image.reshape(-1, 3), axis=0)
-        unique_time = time.time() - unique_start
-        print(f"Found {len(unique_colors)} unique colors in {unique_time:.2f} seconds")
-        
-        print("\nProcessing connected components for each color...")
-        component_start = time.time()
-        
-        for i, color in enumerate(unique_colors):
-            if i % 5 == 0:  # Progress update every 5 colors
-                elapsed = time.time() - component_start
-                avg_time = elapsed / (i + 1) if i > 0 else 0
-                remaining = avg_time * (len(unique_colors) - i - 1)
-                print(f"Processing color {i+1}/{len(unique_colors)} (elapsed: {elapsed:.1f}s, est. remaining: {remaining:.1f}s)...")
-            
-            # Create a mask for pixels of this color
-            mask = np.all(self.reduced_image == color, axis=2)
-            
-            # Find connected components in this mask
-            color_labels, n_features = label(mask, structure=structure)
-            
-            # Add these labels to our main label array (with offset)
-            labels[mask] = color_labels[mask] + current_label
-            current_label += n_features
-        
-        component_time = time.time() - component_start
-        print(f"Connected components processed in {component_time:.2f} seconds")
-        
-        self.segmented_image = labels
-        
-        total_time = time.time() - total_start
-        num_regions = len(np.unique(labels))
-        print("\n" + "=" * 60)
-        print(f"SEGMENTATION COMPLETE - Total: {total_time:.2f} seconds")
-        print(f"Found {num_regions} total regions")
-        print("=" * 60)
-        
-        return self.segmented_image
-    
-    def visualize(self, show_original: bool = True, show_reduced: bool = True, 
-                  show_segmented: bool = True, show_palette: bool = True):
-        """
-        Visualize the original image, color-reduced image, segmented regions, and color palette.
-        
-        Args:
-            show_original: Whether to show the original image
-            show_reduced: Whether to show the color-reduced image
-            show_segmented: Whether to show the segmented regions
-            show_palette: Whether to show the color palette
-        """
-        print("\n" + "=" * 60)
-        print("CREATING VISUALIZATION")
-        print("=" * 60)
-        
-        viz_start = time.time()
-        
-        plots_to_show = sum([show_original, show_reduced, show_segmented, show_palette])
-        
-        if plots_to_show == 0:
-            print("No plots to show")
-            return
-        
-        print(f"Creating figure with {plots_to_show} subplots...")
-        fig, axes = plt.subplots(1, plots_to_show, figsize=(5 * plots_to_show, 5))
-        
-        if plots_to_show == 1:
-            axes = [axes]
-        
-        idx = 0
-        
-        if show_original and self.image_array is not None:
-            print("Plotting original image...")
-            axes[idx].imshow(self.image_array)
-            axes[idx].set_title('Original Image')
-            axes[idx].axis('off')
-            idx += 1
-        
-        if show_reduced and self.reduced_image is not None:
-            print("Plotting color-reduced image...")
-            axes[idx].imshow(self.reduced_image.astype(np.uint8))
-            axes[idx].set_title('Color Reduced Image')
-            axes[idx].axis('off')
-            idx += 1
-        
-        if show_segmented and self.segmented_image is not None:
-            print("Plotting segmented regions...")
-            axes[idx].imshow(self.segmented_image, cmap='nipy_spectral')
-            axes[idx].set_title('Segmented Regions')
-            axes[idx].axis('off')
-            idx += 1
-        
-        if show_palette and self.color_palette is not None:
-            print("Plotting color palette...")
-            # Create a palette visualization
-            palette_img = np.zeros((50, len(self.color_palette) * 50, 3), dtype=np.uint8)
-            for i, color in enumerate(self.color_palette):
-                palette_img[:, i*50:(i+1)*50] = color
-            axes[idx].imshow(palette_img)
-            axes[idx].set_title('Color Palette')
-            axes[idx].axis('off')
-            idx += 1
-        
-        print("Applying tight layout...")
-        plt.tight_layout()
-        
-        viz_time = time.time() - viz_start
-        print(f"Visualization created in {viz_time:.2f} seconds")
-        print("=" * 60)
-        
-        return fig
-    
-    def save_results(self, output_prefix: str = "output", save_visualization: bool = True):
+    def save_results(self, output_prefix: str = "output", seed_colors=None):
         """
         Save the processed images to files.
         
         Args:
             output_prefix: Prefix for output filenames
-            save_visualization: Whether to save the color-segmented visualization
+            seed_colors: Optional list of seed colors to show matches
         """
-        print("\n" + "=" * 60)
-        print("SAVING RESULTS")
-        print("=" * 60)
-        
-        save_start = time.time()
-        
-        if self.reduced_image is not None:
-            print(f"Saving reduced color image...")
-            file_start = time.time()
-            reduced_img = Image.fromarray(self.reduced_image.astype(np.uint8))
-            reduced_img.save(f"{output_prefix}_reduced.png")
-            file_time = time.time() - file_start
-            print(f"Saved: {output_prefix}_reduced.png ({file_time:.2f}s)")
-        
-        if self.segmented_image is not None:
-            # Save normalized segmented image (grayscale labels)
-            print(f"Saving segmented image (grayscale)...")
-            file_start = time.time()
-            seg_normalized = (self.segmented_image - self.segmented_image.min())
-            max_val = seg_normalized.max()
-            # prevent division by zero
-            if max_val > 0:
-                seg_normalized = (seg_normalized / max_val * 255).astype(np.uint8)
-            seg_img = Image.fromarray(seg_normalized)
-            seg_img.save(f"{output_prefix}_segmented.png")
-            file_time = time.time() - file_start
-            print(f"Saved: {output_prefix}_segmented.png ({file_time:.2f}s)")
-            
-            # Save color-segmented visualization
-            if save_visualization:
-                print(f"Saving colorized segmented image...")
-                file_start = time.time()
-                # Create colorized version using matplotlib colormap
-                import matplotlib.cm as cm
-                cmap = cm.get_cmap('nipy_spectral')
-                # Normalize to [0, 1] range
-                seg_norm = seg_normalized / 255.0
-                # Apply colormap
-                colored_seg = cmap(seg_norm)
-                # Convert to RGB (remove alpha channel)
-                colored_seg_rgb = (colored_seg[:, :, :3] * 255).astype(np.uint8)
-                colored_img = Image.fromarray(colored_seg_rgb)
-                colored_img.save(f"{output_prefix}_segmented_colored.png")
-                file_time = time.time() - file_start
-                print(f"Saved: {output_prefix}_segmented_colored.png ({file_time:.2f}s)")
-        
-        total_save_time = time.time() - save_start
-        print("=" * 60)
-        print(f"ALL FILES SAVED - Total: {total_save_time:.2f} seconds")
-        print("=" * 60)
+        _save_results(self.reduced_image, output_prefix=output_prefix,
+                     seed_colors=seed_colors, color_palette_rgb=self.color_palette)
 
 
-def analyze_image(image_path: str, n_colors: int = 8, visualize: bool = True) -> PaletteFinder:
+def parse_seed_colors(seed_file: str) -> List[Tuple[int, int, int]]:
     """
-    Convenience function to analyze an image with default settings.
+    Parse seed colors from a file.
+    
+    File format (one color per line):
+        255,0,0       # Red (comment)
+        #00ff00       # Green (hex)
+        0 0 255       # Blue (space separated)
+        # This is a comment line
     
     Args:
-        image_path: Path to the image file
-        n_colors: Number of colors to reduce to
-        visualize: Whether to display visualization
+        seed_file: Path to file containing seed colors
         
     Returns:
-        PaletteFinder object with analysis results
+        List of RGB tuples
     """
-    overall_start = time.time()
+    seed_colors = []
     
-    finder = PaletteFinder(image_path)
-    finder.load_image()
-    finder.reduce_colors(n_colors=n_colors)
-    finder.segment_regions()
+    with open(seed_file, 'r') as f:
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+            
+            # Skip empty lines
+            if not line:
+                continue
+            
+            try:
+                # Check if line starts with #
+                if line.startswith('#'):
+                    # Try to parse as hex color (need at least #RRGGBB = 7 chars)
+                    if len(line) >= 7:
+                        hex_part = line[1:7]
+                        # Validate that it's actually hex digits
+                        try:
+                            r = int(hex_part[0:2], 16)
+                            g = int(hex_part[2:4], 16)
+                            b = int(hex_part[4:6], 16)
+                            
+                            # Successfully parsed as hex color
+                            seed_colors.append((r, g, b))
+                            print(f"Parsed seed color {len(seed_colors)}: RGB({r:3d}, {g:3d}, {b:3d}) = #{r:02x}{g:02x}{b:02x}")
+                            continue
+                        except ValueError:
+                            # Not valid hex, treat as comment
+                            pass
+                    
+                    # If we get here, it's a comment line - skip it
+                    continue
+                
+                # Not a # line, so try to parse as RGB values
+                # Remove inline comments
+                if '#' in line:
+                    line = line.split('#')[0].strip()
+                
+                # Try comma or space separated
+                parts = line.replace(',', ' ').split()
+                if len(parts) != 3:
+                    print(f"Warning: Invalid color format on line {line_num}: {line}")
+                    continue
+                
+                r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
+                
+                # Validate range
+                if not (0 <= r <= 255 and 0 <= g <= 255 and 0 <= b <= 255):
+                    print(f"Warning: Color values out of range on line {line_num}: RGB({r}, {g}, {b})")
+                    continue
+                
+                seed_colors.append((r, g, b))
+                print(f"Parsed seed color {len(seed_colors)}: RGB({r:3d}, {g:3d}, {b:3d}) = #{r:02x}{g:02x}{b:02x}")
+                
+            except (ValueError, IndexError) as e:
+                print(f"Warning: Failed to parse color on line {line_num}: '{line}' - {e}")
+                continue
     
-    if visualize:
-        finder.visualize()
-        print("\nDisplaying visualization (close window to continue)...")
-        display_start = time.time()
-        plt.show()
-        display_time = time.time() - display_start
-        print(f"Visualization displayed for {display_time:.2f} seconds")
-    
-    overall_time = time.time() - overall_start
-    print("\n" + "=" * 60)
-    print(f"TOTAL PROCESSING TIME: {overall_time:.2f} seconds ({overall_time/60:.1f} minutes)")
-    print("=" * 60)
-    
-    return finder
+    return seed_colors
 
 
 if __name__ == "__main__":
@@ -389,26 +177,111 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
     
     if len(sys.argv) < 2:
-        print("Usage: python palette_finder.py <image_path> [n_colors]")
-        print("Example: python palette_finder.py image.jpg 8")
+        print("Usage: python palette_finder.py <image_path> [n_colors] [weight_L] [weight_a] [weight_b] [--seeds <file>]")
+        print("\nExamples:")
+        print("  python palette_finder.py image.jpg 8")
+        print("  python palette_finder.py image.jpg 32 1 2 2  # Emphasize color over lightness")
+        print("  python palette_finder.py image.jpg 16 --seeds colors.txt  # Force specific colors")
+        print("\nWeights:")
+        print("  weight_L: Weight for lightness (default 1.0)")
+        print("  weight_a: Weight for green-red axis (default 1.0)")
+        print("  weight_b: Weight for blue-yellow axis (default 1.0)")
+        print("\nSeed Colors File Format:")
+        print("  255,0,0       # Red")
+        print("  #00ff00       # Green (hex)")
+        print("  0 0 255       # Blue")
+        print("\nOutput files will be saved with the input filename as prefix")
         sys.exit(1)
     
+    # Parse arguments
     image_path = sys.argv[1]
-    n_colors = int(sys.argv[2]) if len(sys.argv) > 2 else 8
+    args = sys.argv[2:]
+    
+    # Defaults
+    n_colors = 8
+    weight_L = 1.0
+    weight_a = 1.0
+    weight_b = 1.0
+    seed_file = None
+    
+    # Parse positional and flag arguments
+    pos_args = []
+    i = 0
+    while i < len(args):
+        if args[i] == '--seeds':
+            if i + 1 < len(args):
+                seed_file = args[i + 1]
+                i += 2
+            else:
+                print("Error: --seeds requires a filename")
+                sys.exit(1)
+        else:
+            pos_args.append(args[i])
+            i += 1
+    
+    # Parse positional arguments
+    if len(pos_args) > 0:
+        n_colors = int(pos_args[0])
+    if len(pos_args) > 1:
+        weight_L = float(pos_args[1])
+    if len(pos_args) > 2:
+        weight_a = float(pos_args[2])
+    if len(pos_args) > 3:
+        weight_b = float(pos_args[3])
+    
+    seed_weight = 1000.0  # Default seed weight
+    
+    # Parse seed colors if provided
+    seed_colors = None
+    if seed_file:
+        try:
+            seed_colors = parse_seed_colors(seed_file)
+            if len(seed_colors) == 0:
+                print(f"Warning: No valid seed colors found in {seed_file}")
+        except FileNotFoundError:
+            print(f"Error: Seed file not found: {seed_file}")
+            sys.exit(1)
+    
+    # Extract filename without extension for output prefix
+    output_prefix = image_path.rsplit('.', 1)[0]
     
     print(f"Analyzing image: {image_path}")
-    print(f"Reducing to {n_colors} colors...")
+    print(f"Reducing to {n_colors} colors using OKLAB color space...")
+    print(f"Channel weights: L={weight_L:.2f}, a={weight_a:.2f}, b={weight_b:.2f}")
+    if seed_colors:
+        print(f"Using {len(seed_colors)} seed colors from: {seed_file}")
+        print(f"Seed weight multiplier: {seed_weight:.0f}x")
+    print(f"Output files will be saved as: {output_prefix}_*.png")
     print("(Press Ctrl+C to abort at any time)\n")
     
     try:
-        finder = analyze_image(image_path, n_colors=n_colors, visualize=True)
+        # Create finder and process
+        finder = PaletteFinder(image_path)
+        finder.load_image()
+        reduced_image, color_palette = finder.reduce_colors(
+            n_colors=n_colors,
+            weight_L=weight_L,
+            weight_a=weight_a,
+            weight_b=weight_b,
+            seed_colors=seed_colors
+        )
+        finder.save_results(output_prefix=output_prefix, seed_colors=seed_colors)
         
-        print(f"\nFound {len(finder.color_palette)} colors")
-        print(f"Segmented into {len(np.unique(finder.segmented_image))} regions")
+        print(f"\n{'=' * 60}")
+        print(f"ANALYSIS COMPLETE")
+        print(f"{'=' * 60}")
+        print(f"Found {len(color_palette)} colors")
+        print(f"\nOutput files:")
+        print(f"  - {output_prefix}_reduced.png")
+        print(f"  - {output_prefix}_palette.txt")
+        print(f"{'=' * 60}")
+        
     except KeyboardInterrupt:
         print("\n\nProcess interrupted by user")
         print("Exiting...")
         sys.exit(0)
     except Exception as e:
         print(f"\nError during processing: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
